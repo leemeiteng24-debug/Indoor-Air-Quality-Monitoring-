@@ -1,0 +1,8 @@
+source "C:/Espressif/frameworks/esp-idf-v5.2.5/components/bootloader/Kconfig.projbuild"
+source "C:/Espressif/frameworks/esp-idf-v5.2.5/components/esp_app_format/Kconfig.projbuild"
+source "C:/Espressif/frameworks/esp-idf-v5.2.5/components/esp_rom/Kconfig.projbuild"
+source "C:/Espressif/frameworks/esp-idf-v5.2.5/components/esptool_py/Kconfig.projbuild"
+source "C:/Espressif/frameworks/esp-idf-v5.2.5/components/partition_table/Kconfig.projbuild"
+source "D:/embeded system/assignment 3/rainmaker_A3/main/Kconfig.projbuild"
+source "C:/Espressif/esp-rainmaker/examples/common/app_network/Kconfig.projbuild"
+source "C:/Espressif/esp-rainmaker/components/esp_rainmaker/Kconfig.projbuild"
