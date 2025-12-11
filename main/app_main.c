@@ -72,17 +72,25 @@ extern int read_temp(void);
 extern int read_humidity(void);
 extern int read_CO2(void);
 
-/* Buzzer write callback for voice/cloud control */
-static esp_err_t buzzer_write_cb(const esp_rmaker_device_t *dev, const esp_rmaker_param_t *param,
-                                 const esp_rmaker_param_val_t val, void *priv_data, esp_rmaker_write_ctx_t *ctx)
+/* Buzzer write callback for cloud control */
+static esp_err_t buzzer_write_cb(const esp_rmaker_device_t *dev,
+                                 const esp_rmaker_param_t *param,
+                                 const esp_rmaker_param_val_t val,
+                                 void *priv_data,
+                                 esp_rmaker_write_ctx_t *ctx)
 {
-    if (strcmp(esp_rmaker_param_get_name(param), "Power") == 0) {
-        bool on = val.val.b;
+    bool on = val.val.b;
 
-        buzzer_set_state(on);                     // <-- THIS controls GPIO
+    ESP_LOGI(TAG, "BUZZER WRITE: %s (source: %s)",
+             on ? "ON" : "OFF",
+             ctx ? esp_rmaker_device_cb_src_to_str(ctx->src) : "N/A");
 
-        esp_rmaker_param_update_and_report(param, val);
-    }
+    /* Directly control the buzzer pin */
+    gpio_set_level(buzzer_gpio, on ? 1 : 0);
+
+    /* Update rainmaker dashboard */
+    esp_rmaker_param_update_and_report(param, val);
+
     return ESP_OK;
 }
 
@@ -126,12 +134,18 @@ static void safe_report_co2(int co2)
 
 static void task1_sensor_monitor(void *pv)
 {
+    TickType_t last_send_time = 0;
+    static bool was_abnormal = false; 
+
     while (1) {
         int temp_value = read_temp();
         normal_data.temp = temp_value;
         abnormal_data.temp = temp_value;
 
-        safe_report_temp(temp_value);
+        if(xTaskGetTickCount() - last_send_time > pdMS_TO_TICKS(10000)){
+            safe_report_temp(temp_value);
+            last_send_time = xTaskGetTickCount();
+        }
 
         if (xSemaphoreTake(monitor_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
             /* Normal data always goes to sensor buffer */
@@ -141,7 +155,10 @@ static void task1_sensor_monitor(void *pv)
                 xMessageBufferSend(alert_buffer, &abnormal_data, sizeof(abnormal_data), portMAX_DELAY);
                 xEventGroupSetBits(alertEvent, temp_BITs);
             } else {
-                xEventGroupSetBits(alertEvent, normal_BITS);
+                if(was_abnormal){
+                    xEventGroupSetBits(alertEvent, normal_BITS);
+                    was_abnormal = false;
+                }
             }
             xSemaphoreGive(monitor_mutex);
         }
@@ -151,6 +168,8 @@ static void task1_sensor_monitor(void *pv)
 
 static void task2_co2_humidity(void *pv)
 {
+    TickType_t last_send_time = 0;
+
     while (1) {
         int CO2 = read_CO2();
         int humidity = read_humidity();
@@ -161,21 +180,24 @@ static void task2_co2_humidity(void *pv)
         abnormal_data.CO2 = CO2;
         abnormal_data.humidity = humidity;
 
-        safe_report_co2(CO2);
-        safe_report_hum(humidity);
+        if(xTaskGetTickCount() - last_send_time > pdMS_TO_TICKS(10000)){
+            safe_report_co2(CO2); 
+            safe_report_hum(humidity);
+            last_send_time = xTaskGetTickCount();
+        }
 
         if (CO2 > 1500) {
             xEventGroupSetBits(alertEvent, CO2_BITS);
-            xMessageBufferSend(alert_buffer, &abnormal_data, sizeof(abnormal_data), portMAX_DELAY);
+            xMessageBufferSend(alert_buffer, &abnormal_data, sizeof(abnormal_data), 0);
         }
-        if (humidity > 90) {
+        if (humidity > 70) {
             xEventGroupSetBits(alertEvent, humidity_BITS);
-            xMessageBufferSend(alert_buffer, &abnormal_data, sizeof(abnormal_data), portMAX_DELAY);
+            xMessageBufferSend(alert_buffer, &abnormal_data, sizeof(abnormal_data), 0);
         }
 
         xMessageBufferSend(sensor_buffer, &normal_data, sizeof(normal_data), 0);
 
-        vTaskDelay(pdMS_TO_TICKS(200));
+        vTaskDelay(pdMS_TO_TICKS(500)); //check button every 500ms
     }
 }
 
@@ -184,36 +206,31 @@ static void task3_alert(void *pv)
     Sensor_packet_t alertData;
 
     while (1) {
-        EventBits_t bits = xEventGroupWaitBits(alertEvent,
-                                               temp_BITs | CO2_BITS | humidity_BITS,
-                                               pdTRUE, pdFALSE, portMAX_DELAY);
+        EventBits_t bits = xEventGroupWaitBits(alertEvent, temp_BITs | CO2_BITS | humidity_BITS, pdTRUE, pdFALSE, portMAX_DELAY);
 
-        size_t r = xMessageBufferReceive(alert_buffer, &alertData, sizeof(alertData), pdMS_TO_TICKS(500));
+        while(xMessageBufferReceive(alert_buffer, &alertData, sizeof(alertData), 0) == sizeof(alertData)){
 
-        if (r == sizeof(alertData)) {
-            if (bits & temp_BITs) {
-                ESP_LOGW(TAG, "Temp ALERT: %d C", alertData.temp);
-                esp_rmaker_param_update_and_report(TempAlert_param, esp_rmaker_int(1));
-            }
-            if (bits & CO2_BITS) {
-                ESP_LOGW(TAG, "CO2 ALERT: %d ppm", alertData.CO2);
-                esp_rmaker_param_update_and_report(CO2Alert_param, esp_rmaker_int(1));
-            }
-            if (bits & humidity_BITS) {
-                ESP_LOGW(TAG, "Humidity ALERT: %d %%", alertData.humidity);
-                esp_rmaker_param_update_and_report(HumidityAlert_param, esp_rmaker_int(1));
-            }
+        if (bits & temp_BITs) {
+            ESP_LOGW(TAG, "Temp ALERT: %d C", alertData.temp);
+            esp_rmaker_param_update_and_report(TempAlert_param, esp_rmaker_int(1));
+        }
+        if (bits & CO2_BITS) {
+            ESP_LOGW(TAG, "CO2 ALERT: %d ppm", alertData.CO2);
+            esp_rmaker_param_update_and_report(CO2Alert_param, esp_rmaker_int(1));
+        }
+        if (bits & humidity_BITS) {
+            ESP_LOGW(TAG, "Humidity ALERT: %d %%", alertData.humidity);
+            esp_rmaker_param_update_and_report(HumidityAlert_param, esp_rmaker_int(1));
+        }
 
             ESP_LOGW(TAG, "WARNING!!! Activating buzzer");
             gpio_set_level(buzzer_gpio, 1);
-            vTaskDelay(pdMS_TO_TICKS(300));
+            vTaskDelay(pdMS_TO_TICKS(100));
             gpio_set_level(buzzer_gpio, 0);
         }
-
-        vTaskDelay(pdMS_TO_TICKS(10000));
+        vTaskDelay(pdMS_TO_TICKS(300));
     }
 }
-
 
 /* Task: printer (print latest sensor from buffer occasionally) */
 static void printer_task(void *pv)
@@ -274,11 +291,6 @@ static void rainmaker_init_and_start(void)
     rmaker_hum_param  = esp_rmaker_device_get_param_by_name(humidity_device, "Humidity");
     rmaker_co2_param  = esp_rmaker_device_get_param_by_name(co2_device, "CO2");
 
-    /* Start RainMaker agent, OTA and insights */
-    /* If you want Google Home integration, enable the component in menuconfig and add esp_rmaker_google_home to components.
-       If you have the Google Home support enabled in your SDK, uncomment the next line:
-       esp_rmaker_enable_google_home();
-    */
 #ifdef CONFIG_ESP_RMAKER_GOOGLE_HOME_ENABLED
     /* If the component and Kconfig are available */
     esp_rmaker_enable_google_home();
