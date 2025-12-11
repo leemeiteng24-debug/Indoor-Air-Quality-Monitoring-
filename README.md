@@ -6,7 +6,8 @@ A smart indoor air quality (IAQ) monitoring system based on seed-studio ESP32-C3
 2. Humidity monitoring 
 3. CO₂ monitoring 
 4. Alert System via buzzer
-5. Build with FreeRTOS for multitaking 
+5. Build with FreeRTOS for multitaking
+6. OTA firmware update
 
 # Component Used
 1. Seed Studio ESP32-C3 Dev Board
