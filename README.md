@@ -1,6 +1,7 @@
-# Indoor Air Quality Monitoring
+# Indoor Air Quality Monitoring System
+A smart indoor air quality (IAQ) monitoring system based on seed-studio ESP32-C3 and ESP Rainmaker. This project monitors the temperature, humidity, and CO₂ levels in your space.  You can track the parameters using the app. There are many occasions where people are unaware of the surrounding air quality, causing discomfort and, in the worst-case scenario, health problems.  This project aims to alert users when parameter values are abnormal.
 
-## Build and Flash firmware
+# Build and Flash firmware
 
 Follow the ESP RainMaker Documentation [Get Started](https://rainmaker.espressif.com/docs/get-started.html) section to build and flash this firmware. Just note the path of this example.
 
