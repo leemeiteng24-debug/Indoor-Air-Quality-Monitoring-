@@ -1,4 +1,4 @@
-# Temperature Sensor Example
+# Indoor Air Quality Monitoring
 
 ## Build and Flash firmware
 
