@@ -6,6 +6,8 @@
 #include "driver/gpio.h"
 #include "esp_log.h"
 #include "esp_system.h"
+#include <string.h>
+#include "app_priv.h"
 
 static const char *TAG = "app_driver";
 static esp_adc_cal_characteristics_t adc_chars;
@@ -67,19 +69,19 @@ int read_CO2(void)
 {
     if (gpio_get_level(CO2Switch_GPIO) == 0){
     //switch pressed = CO2 high
-    return 1000 + (rand()%(4000-1000+1));
+    return 1000 + (rand()%(4000-1000+1)); //1000-4000
     } else {
         //switch release = normal CO2 range
-        return 400 + (rand()%(1000-400+1));
+        return 400 + (rand()%(1000-400+1)); //400-1000
 }}
 
 /* read_humidity: active-low button -> pressed = abnormal */
 int read_humidity(void)
 {
-    if (gpio_get_level(CO2Switch_GPIO) == 0){
+    if (gpio_get_level(HumiditySwitch_GPIO) == 0){
     //switch pressed = humiidty high
-    return 70 + (rand()%(100-70+1));
+    return 70 + (rand()%(100-70+1)); //70-100
     } else {
         //switch release = normal humidity range
-        return 30 + (rand()%(69-30+1));
+        return 30 + (rand()%(70-30+1)); //30-70
 }}
